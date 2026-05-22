@@ -1,26 +1,28 @@
 """
 Web Server for Philippine Disaster Monitor
-Combines Streamlit dashboard with API endpoints for UptimeRobot
+Serves HTML dashboard + Telegram polling via UptimeRobot
 """
 
-from flask import Flask, redirect, jsonify, request
-import threading
 import os
 import sys
-
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import json
+import requests
+from datetime import datetime
+from flask import Flask, jsonify, request, redirect
 
 app = Flask(__name__)
 
-# Global status store (shared with Streamlit via files)
-STATUS_FILE = os.path.join(os.path.dirname(__file__), "status.json")
-USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
+# Get bot token
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8938903628:AAGCXL5AgWsymcZAGmOOoe0d2ZHCMPHpzbM")
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "59838581")
 
-# ==================== BOT HANDLER LOGIC ====================
+# Files
+STATUS_FILE = "status.json"
+USERS_FILE = "users.json"
+
+# ==================== HELPER FUNCTIONS ====================
 
 def load_json(filepath, default=None):
-    """Load JSON file safely"""
     try:
         if os.path.exists(filepath):
             with open(filepath, 'r') as f:
@@ -30,8 +32,6 @@ def load_json(filepath, default=None):
     return default if default is not None else {}
 
 def save_json(filepath, data):
-    """Save JSON file safely"""
-    import json
     try:
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=2, default=str)
@@ -39,23 +39,32 @@ def save_json(filepath, data):
     except:
         return False
 
-def check_and_process_telegram(bot_token):
-    """Poll Telegram for updates and process commands"""
-    import requests
-    from datetime import datetime
-
+def send_telegram_message(chat_id, text):
     try:
-        url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
-        params = {"timeout": 1, "allowed_updates": ["message"]}
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        requests.post(url, json={
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML"
+        }, timeout=10)
+    except:
+        pass
 
+def poll_telegram_commands():
+    """Poll Telegram for any pending /sos or /safe updates"""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+        params = {"timeout": 1, "allowed_updates": ["message"]}
         response = requests.get(url, params=params, timeout=5)
         data = response.json()
 
         if not data.get("ok"):
-            return {"success": False, "reason": "API error"}
+            return 0
 
         updates = data.get("result", [])
         processed = 0
+        statuses = load_json(STATUS_FILE, {})
+        users = load_json(USERS_FILE, {})
 
         for update in updates:
             message = update.get("message")
@@ -67,11 +76,7 @@ def check_and_process_telegram(bot_token):
             username = message['chat'].get('username', '')
             text = message.get("text", "")
 
-            # Load current data
-            statuses = load_json(STATUS_FILE, {})
-            users = load_json(USERS_FILE, {})
-
-            # Register/update user
+            # Register user
             users[chat_id] = {
                 "chat_id": chat_id,
                 "name": name,
@@ -80,7 +85,6 @@ def check_and_process_telegram(bot_token):
                 "last_seen": datetime.now().isoformat()
             }
 
-            # Process command
             if text.startswith('/sos'):
                 statuses[chat_id] = {
                     "name": name,
@@ -92,9 +96,7 @@ def check_and_process_telegram(bot_token):
                 users[chat_id]["status"] = "SOS"
                 users[chat_id]["status_timestamp"] = datetime.now().isoformat()
                 processed += 1
-
-                # Send confirmation
-                send_telegram_message(bot_token, chat_id, "🆘 SOS registered! Help is on the way. Stay safe.")
+                send_telegram_message(chat_id, "🆘 SOS registered! Help is on the way. Stay safe.")
 
             elif text.startswith('/safe'):
                 statuses[chat_id] = {
@@ -107,173 +109,384 @@ def check_and_process_telegram(bot_token):
                 users[chat_id]["status"] = "SAFE"
                 users[chat_id]["status_timestamp"] = datetime.now().isoformat()
                 processed += 1
+                send_telegram_message(chat_id, "✅ You're marked as SAFE. Glad you're okay!")
 
-                # Send confirmation
-                send_telegram_message(bot_token, chat_id, "✅ You're marked as SAFE. Glad you're okay!")
-
-        # Save updated data
         if processed > 0:
             save_json(STATUS_FILE, statuses)
             save_json(USERS_FILE, users)
 
-        return {"success": True, "updates_checked": len(updates), "commands_processed": processed}
-
+        return processed
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        print(f"Error polling Telegram: {e}")
+        return 0
 
-def send_telegram_message(bot_token, chat_id, text):
-    """Send a Telegram message"""
-    import requests
+def get_dashboard_data():
+    """Fetch disaster events from feeds"""
+    events = []
     try:
-        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        requests.post(url, json={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML"
-        }, timeout=10)
+        from scraper import get_dashboard_data as scrape
+        data = scrape()
+        events = data.get('events', [])
     except:
         pass
+    return events
+
+# ==================== HTML DASHBOARD ====================
+
+DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌏 Philippine Disaster Monitor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            min-height: 100vh;
+        }
+        .header {
+            background: linear-gradient(135deg, #1E3A5F 0%, #2C5282 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+        .header h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
+        .header p { opacity: 0.9; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .metric {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .metric h3 { font-size: 2.5rem; margin-bottom: 0.5rem; }
+        .metric p { opacity: 0.7; }
+        .metric.alert { background: #FF4444; color: white; }
+        .metric.safe { background: #4CAF50; color: white; }
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .tab {
+            padding: 0.75rem 1.5rem;
+            background: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+        .tab:hover { background: #e2e8f0; }
+        .tab.active { background: #2C5282; color: white; }
+        .content {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .event {
+            padding: 1rem;
+            border-left: 4px solid #ccc;
+            margin-bottom: 1rem;
+            border-radius: 0 8px 8px 0;
+            background: #f8f9fa;
+        }
+        .event.critical { border-left-color: #FF4444; }
+        .event.high { border-left-color: #FF8C00; }
+        .event.medium { border-left-color: #FFD700; }
+        .event h4 { margin-bottom: 0.5rem; }
+        .event small { opacity: 0.7; }
+        .event a { color: #2C5282; }
+        .person {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            background: #f8f9fa;
+        }
+        .person.sos { background: #FFE5E5; border-left: 4px solid #FF4444; }
+        .person.safe { background: #E8F5E9; border-left: 4px solid #4CAF50; }
+        .person-emoji { font-size: 2rem; }
+        .person-info h4 { margin: 0; }
+        .person-info small { opacity: 0.7; }
+        .section-title { margin-bottom: 1rem; font-size: 1.25rem; }
+        .refresh {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            background: #2C5282;
+            color: white;
+            border: none;
+            padding: 1rem 1.5rem;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 1rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        .telegram-info {
+            background: #e8f5e9;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+        .telegram-info h4 { color: #2C5282; margin-bottom: 0.5rem; }
+        .telegram-info code {
+            background: #c8e6c9;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌏 Philippine Disaster Monitor</h1>
+        <p>Real-time monitoring: PHILVOLCS • PAGASA • GDACS</p>
+    </div>
+
+    <div class="container">
+        <div class="metrics">
+            <div class="metric">
+                <h3 id="total-events">0</h3>
+                <p>Total Events</p>
+            </div>
+            <div class="metric" id="critical-metric">
+                <h3 id="critical-count">0</h3>
+                <p>Critical/High</p>
+            </div>
+            <div class="metric alert">
+                <h3 id="sos-count">0</h3>
+                <p>🔴 SOS</p>
+            </div>
+            <div class="metric safe">
+                <h3 id="safe-count">0</h3>
+                <p>🟢 SAFE</p>
+            </div>
+        </div>
+
+        <div class="telegram-info">
+            <h4>📱 Telegram Commands</h4>
+            <p>Message <strong>@PhilippineDisasterMonitoring_bot</strong> and send:</p>
+            <p><code>/sos</code> - Request help | <code>/safe</code> - I'm safe | <code>/status</code> - Check status</p>
+            <p><small>Bot is active! Status updates appear below automatically.</small></p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('events')">📊 All Events</button>
+            <button class="tab" onclick="showTab('sos')">🆘 People Status</button>
+        </div>
+
+        <div class="content" id="events-tab">
+            <h3 class="section-title">📊 Recent Disaster Events</h3>
+            <div id="events-list">Loading...</div>
+        </div>
+
+        <div class="content" id="sos-tab" style="display:none;">
+            <h3 class="section-title">🆘 People Status Reports</h3>
+            <div id="people-list">Loading...</div>
+        </div>
+    </div>
+
+    <button class="refresh" onclick="refreshData()">🔄 Refresh</button>
+
+    <script>
+        let currentTab = 'events';
+
+        async function fetchData() {
+            try {
+                const res = await fetch('/api/data');
+                return await res.json();
+            } catch (e) {
+                return { events: [], statuses: [], users: {} };
+            }
+        }
+
+        function showTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('events-tab').style.display = tab === 'events' ? 'block' : 'none';
+            document.getElementById('sos-tab').style.display = tab === 'sos' ? 'block' : 'none';
+        }
+
+        function renderEvents(events) {
+            const container = document.getElementById('events-list');
+            if (!events || events.length === 0) {
+                container.innerHTML = '<p>No events found.</p>';
+                return;
+            }
+            container.innerHTML = events.slice(0, 30).map(e => `
+                <div class="event ${e.severity || 'low'}">
+                    <h4>${e.severity === 'critical' ? '🚨' : e.severity === 'high' ? '⚠️' : 'ℹ️'} ${e.title || 'No Title'}</h4>
+                    <small>${e.source || 'Unknown'} | ${e.type || 'general'} | ${e.severity || 'low'}</small>
+                    <p>${(e.description || '').substring(0, 200)}...</p>
+                    ${e.link ? `<a href="${e.link}" target="_blank">View Source →</a>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function renderPeople(statuses) {
+            const container = document.getElementById('people-list');
+            if (!statuses || Object.keys(statuses).length === 0) {
+                container.innerHTML = '<p>No status reports yet. People can send /sos or /safe via Telegram.</p>';
+                return;
+            }
+            container.innerHTML = Object.values(statuses).map(s => `
+                <div class="person ${s.status === 'SOS' ? 'sos' : 'safe'}">
+                    <div class="person-emoji">${s.status === 'SOS' ? '🔴' : '🟢'}</div>
+                    <div class="person-info">
+                        <h4>${s.name || 'Unknown'}</h4>
+                        <small>@${s.username || 'N/A'} | ${s.status}</small>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function refreshData() {
+            const data = await fetchData();
+
+            // Update metrics
+            document.getElementById('total-events').textContent = data.events?.length || 0;
+            const critical = (data.events || []).filter(e => e.severity === 'critical' || e.severity === 'high').length;
+            document.getElementById('critical-count').textContent = critical;
+
+            const sos = Object.values(data.statuses || {}).filter(s => s.status === 'SOS').length;
+            const safe = Object.values(data.statuses || {}).filter(s => s.status === 'SAFE').length;
+            document.getElementById('sos-count').textContent = sos;
+            document.getElementById('safe-count').textContent = safe;
+
+            // Render content
+            renderEvents(data.events);
+            renderPeople(data.statuses);
+        }
+
+        // Initial load and auto-refresh every 30 seconds
+        refreshData();
+        setInterval(refreshData, 30000);
+    </script>
+</body>
+</html>
+"""
 
 # ==================== WEB ENDPOINTS ====================
 
 @app.route('/')
 def index():
-    """Redirect to Streamlit dashboard"""
+    """Main dashboard"""
     return redirect('/dashboard', code=302)
 
 @app.route('/dashboard')
 def dashboard():
-    """Proxy to Streamlit dashboard"""
-    # For UptimeRobot, we'll show a simple status page
-    # In production, you'd use nginx reverse proxy to Streamlit
-    return """
-    <html><head><title>PhilDisaster Monitor</title></head>
-    <body>
-    <h1>🌏 Philippine Disaster Monitor</h1>
-    <p>Dashboard is running. Open the Streamlit app directly.</p>
-    <p><a href="/health">Health Check</a> | <a href="/status">Status API</a></p>
-    </body></html>
-    """
+    """Serve the HTML dashboard"""
+    return DASHBOARD_HTML
 
-@app.route('/health')
-def health():
-    """
-    Health check endpoint for UptimeRobot
-    Also processes Telegram commands on each ping
-    """
-    import json
-    from datetime import datetime
+@app.route('/api/data')
+def api_data():
+    """Get all data for dashboard"""
+    # Poll Telegram for any new commands (keeps bot active)
+    poll_telegram_commands()
 
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "8938903628:AAGCXL5AgWsymcZAGmOOoe0d2ZHCMPHpzbM")
-
-    # Process any pending Telegram commands
-    telegram_result = check_and_process_telegram(bot_token)
-
-    # Get current status
+    # Load statuses and users
     statuses = load_json(STATUS_FILE, {})
     users = load_json(USERS_FILE, {})
 
-    sos_count = sum(1 for s in statuses.values() if s.get('status') == 'SOS')
-    safe_count = sum(1 for s in statuses.values() if s.get('status') == 'SAFE')
-
-    result = {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "service": "PhilDisaster Monitor",
-        "telegram": telegram_result,
-        "people_status": {
-            "sos": sos_count,
-            "safe": safe_count,
-            "total": len(statuses)
-        },
-        "users_registered": len(users)
-    }
-
-    return jsonify(result)
-
-@app.route('/status')
-def status():
-    """Get current status summary"""
-    from datetime import datetime
-
-    statuses = load_json(STATUS_FILE, {})
-    users = load_json(USERS_FILE, {})
+    # Get events
+    events = []
+    try:
+        sys.path.insert(0, os.path.dirname(__file__))
+        from scraper import scrape_all_feeds
+        events = scrape_all_feeds()
+    except Exception as e:
+        print(f"Error fetching events: {e}")
 
     return jsonify({
         "timestamp": datetime.now().isoformat(),
+        "events": events,
         "statuses": statuses,
-        "users": len(users),
+        "users": users,
         "sos_count": sum(1 for s in statuses.values() if s.get('status') == 'SOS'),
         "safe_count": sum(1 for s in statuses.values() if s.get('status') == 'SAFE')
     })
 
+@app.route('/health')
+def health():
+    """Health check + Telegram polling"""
+    # Process any pending Telegram commands
+    processed = poll_telegram_commands()
+
+    # Load current status
+    statuses = load_json(STATUS_FILE, {})
+    users = load_json(USERS_FILE, {})
+
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "telegram_processed": processed,
+        "people_status": {
+            "sos": sum(1 for s in statuses.values() if s.get('status') == 'SOS'),
+            "safe": sum(1 for s in statuses.values() if s.get('status') == 'SAFE'),
+            "total": len(statuses)
+        },
+        "users_registered": len(users)
+    })
+
+@app.route('/status')
+def status():
+    """Simple status endpoint"""
+    return jsonify(load_json(STATUS_FILE, {}))
+
 @app.route('/broadcast', methods=['POST'])
 def broadcast():
-    """Broadcast a message to all registered users"""
-    import json
-    from datetime import datetime
-
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    """Broadcast message to all users"""
     message = request.json.get('message', '')
-
     if not message:
-        return jsonify({"error": "No message provided"}), 400
-
-    if not bot_token:
-        return jsonify({"error": "No bot token configured"}), 500
+        return jsonify({"error": "No message"}), 400
 
     users = load_json(USERS_FILE, {})
-    sent = []
-    failed = []
+    sent, failed = [], []
 
     for user_id, user_data in users.items():
         chat_id = user_data.get('chat_id')
         if not chat_id:
             continue
-
         try:
-            import requests
-            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-            resp = requests.post(url, json={
-                "chat_id": chat_id,
-                "text": message,
-                "parse_mode": "HTML"
-            }, timeout=10)
+            send_telegram_message(chat_id, message)
+            sent.append(chat_id)
+        except:
+            failed.append(chat_id)
 
-            if resp.json().get("ok"):
-                sent.append(chat_id)
-            else:
-                failed.append({"chat_id": chat_id, "error": resp.json().get("description")})
-        except Exception as e:
-            failed.append({"chat_id": chat_id, "error": str(e)})
-
-    return jsonify({
-        "sent": sent,
-        "failed": failed,
-        "total": len(users)
-    })
-
-# ==================== MAIN ====================
+    return jsonify({"sent": sent, "failed": failed, "total": len(users)})
 
 if __name__ == "__main__":
-    import json
-
-    print("""
-╔══════════════════════════════════════════════════════════════╗
-║         🌏 Philippine Disaster Monitor - API Server          ║
-╚══════════════════════════════════════════════════════════════╝
-    """)
-
-    # Get port from environment (Render sets PORT)
     port = int(os.environ.get("PORT", 5000))
+    print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║         🌏 Philippine Disaster Monitor                      ║
+║         API Server + Dashboard                              ║
+╚══════════════════════════════════════════════════════════════╝
 
-    print(f"🚀 Starting server on port {port}...")
-    print(f"📍 Endpoints:")
-    print(f"   /          - Redirect to dashboard")
-    print(f"   /health    - Health check + Telegram polling")
-    print(f"   /status    - Current status summary")
-    print(f"   /broadcast - Send message to all users")
-    print()
+🚀 Server running on port {port}
 
-    # Run the Flask server
+📍 Endpoints:
+   /           → Redirect
+   /dashboard  → HTML Dashboard
+   /api/data   → JSON data (events + statuses)
+   /health     → Health check + Telegram polling
+   /status     → Current statuses
+   /broadcast  → Send message to all users
+    """)
     app.run(host="0.0.0.0", port=port, debug=False)
