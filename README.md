@@ -2,160 +2,123 @@
 
 Real-time monitoring dashboard and alerting system for Philippine disaster events with crowd-sourced safety status tracking.
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Render.com (Free Tier)                    │
+│  ┌─────────────────┐    ┌────────────────────────────────┐ │
+│  │  Flask API      │    │      Streamlit Dashboard        │ │
+│  │  Server         │◄──►│      (HTML Dashboard)          │ │
+│  │  /health        │    │                                │ │
+│  │  /status        │    │  Tabs:                          │ │
+│  │  /broadcast     │    │  • All Events                    │ │
+│  │                 │    │  • Mindanao Focus               │ │
+│  │  Telegram       │    │  • People Status (SOS/SAFE)     │ │
+│  │  Polling        │    │  • User Management              │ │
+│  │  (on /health)   │    │                                │ │
+│  └────────┬────────┘    └────────────────────────────────┘ │
+│           │                                             │
+│  ┌────────▼────────┐                                      │
+│  │  UptimeRobot    │◄──── Pings /health every 5 min       │
+│  │  (Free)        │       Keeps app alive                 │
+│  └────────────────┘       Polls Telegram for /sos       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┴────────────────┐
+              ▼                               ▼
+     ┌────────────────┐              ┌────────────────┐
+     │ Telegram Bot   │              │  Alert         │
+     │ @PhilippineDis │              │  Broadcast     │
+     │ asterMonitor  │              │  to All Users │
+     └────────────────┘              └────────────────┘
+```
+
 ## Features
 
 ### Dashboard
-- **Live RSS/XML aggregation** from:
-  - 🌋 PHILVOLCS (seismic activity, volcanic eruptions, tsunamis)
-  - 🌦️ PAGASA (weather, tropical cyclones, floods)
-  - 🌍 GDACS (global disasters affecting Philippines)
-  - 📺 Google News PH (Philippine disaster news)
+- **Live RSS/XML aggregation** from Google News PH
+- **Severity filtering** with color-coded alerts
+- **Provincial hazard sidebar** with Mindanao focus
+- **People Status** tab - SOS/SAFE reports from Telegram
+- **User Management** tab - Register users, broadcast alerts
 
-- **Severity filtering** with color-coded alerts:
-  - 🔴 Critical (M5.0+ earthquakes, State of Calamity)
-  - 🟠 High (M4.0+ earthquakes, Severe weather warnings)
-  - 🟡 Medium (M3.0+ seismic activity, Weather advisories)
-  - 🟢 Low (Minor events, informational)
+### Telegram Integration
+- Users send `/sos` or `/safe` to the bot
+- Status updates reflect on dashboard automatically
+- UptimeRobot pings `/health` endpoint every 5 min
+- `/health` processes Telegram updates and keeps app alive
 
-- **Provincial hazard sidebar** with Mindanao focus:
-  - Real-time status per province
-  - Active event counts
-  - Regional grouping
-  - Risk level indicators
+## Deployment
 
-### Alerting System
-- **Telegram alerts** for:
-  - 🚨 State of Calamity declarations
-  - 🌋 Major earthquakes (M5.0+)
-  - 🌪️ Severe tropical cyclones (Signal #3+)
-
-- **Rich formatted messages** with:
-  - Location and affected region
-  - Hazard types for the area
-  - Direct links to official sources
-  - Recommended safety actions
-
-- **Broadcast to all users**: When disaster alerts trigger, ALL registered Telegram users receive the alert
-
-### Crowd-Sourced Safety Status
-- **People can report via Telegram**:
-  - `/sos` - Request emergency help
-  - `/safe` - Confirm you're safe
-  - `/status` - Check your status
-
-- **Dashboard shows all reports**:
-  - 🔴 SOS count (people needing help)
-  - 🟢 SAFE count (people confirmed safe)
-  - Individual user status with timestamp
-  - Telegram username tracking
-
-- **How it works**:
-  1. User messages @PhilippineDisasterMonitoring_bot
-  2. Sends /sos or /safe
-  3. Status appears on dashboard in real-time
-  4. All users receive disaster alerts automatically
-
-## Quick Start
-
-### 1. Install Dependencies
-
+### 1. Push to GitHub
 ```bash
-cd disaster-monitor
-pip install -r requirements.txt
+git add .
+git commit -m "Add all files"
+git push origin main
 ```
 
-### 2. Configure Telegram
+### 2. Deploy to Render.com (Free)
+1. Go to https://render.com and sign in with GitHub
+2. Click **"New +"** → **"Web Service"**
+3. Connect **abamores/PhilDisaster** repo
+4. Configure:
+   - **Name:** `phil-disaster-monitor`
+   - **Region:** Singapore
+   - **Branch:** `main`
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `python api_server.py`
+5. Add Environment Variables:
+   - `TELEGRAM_BOT_TOKEN` = `8938903628:AAGCXL5AgWsymcZAGmOOoe0d2ZHCMPHpzbM`
+   - `TELEGRAM_CHAT_ID` = `59838581`
+6. Click **"Create Web Service"**
 
-Set environment variables:
-```bash
-export TELEGRAM_BOT_TOKEN="your_bot_token"
-export TELEGRAM_CHAT_ID="your_chat_id"
-```
+### 3. Configure UptimeRobot (Free - keeps app alive)
+1. Go to https://uptimerobot.com and sign up
+2. Click **"Add New Monitor"**
+3. Configure:
+   - **Monitor Type:** HTTP(s)
+   - **Friendly Name:** PhilDisaster Health
+   - **URL:** `https://phil-disaster-monitor.onrender.com/health`
+   - **Monitoring Interval:** 5 minutes
+4. Click **Create Monitor**
 
-### 3. Start the Bot Handler (Terminal 1)
+Now your app stays awake 24/7 and Telegram commands are processed on each UptimeRobot ping!
+
+## Local Development
 
 ```bash
 cd /Users/a2519/CLAUDE_WORKSPACE/disaster-monitor
-python3 bot_handler.py 8938903628:AAGCXL5AgWsymcZAGmOOoe0d2ZHCMPHpzbM
+
+# Start everything (Dashboard + API Server)
+python3 launcher_combined.py
+
+# Or start individually
+python3 api_server.py          # API + Telegram polling
+python3 -m streamlit run dashboard.py  # Dashboard only
+
+# Dashboard: http://localhost:8501
+# API Server: http://localhost:5000/health
 ```
 
-### 4. Run the Dashboard (Terminal 2)
-
-```bash
-cd /Users/a2519/CLAUDE_WORKSPACE/disaster-monitor
-streamlit run dashboard.py --server.port 8501
-```
-
-### 5. Run the Automated Monitor (Optional)
-
-```bash
-python monitor.py --interval 15
-```
+## Telegram Commands (for users)
+- `/sos` - Request emergency help
+- `/safe` - Confirm you're safe
+- `/status` - Check your status
 
 ## Project Structure
 
 ```
 disaster-monitor/
-├── scraper.py      # RSS/XML feed parsing and data models
-├── dashboard.py    # Streamlit dashboard UI
-├── monitor.py      # Automated monitoring and alerting
-├── bot_handler.py  # Telegram bot for SOS/SAFE commands
-├── requirements.txt
-├── config.json     # (optional) Configuration file
+├── api_server.py        # Flask API + Telegram polling
+├── dashboard.py         # Streamlit dashboard
+├── scraper.py          # RSS/XML feed parsing
+├── bot_handler.py      # Telegram bot logic
+├── monitor.py         # Disaster monitoring
+├── health_check.py     # Standalone health check
+├── launcher_combined.py # Start all components
+├── requirements.txt    # Dependencies
+├── Procfile           # Render deployment
+├── render.yaml        # Render config
 └── README.md
 ```
-
-## How Users Register
-
-1. **User messages the bot** on Telegram: @PhilippineDisasterMonitoring_bot
-2. **User sends `/sos`** (if they need help) or **`/safe`** (if they're safe)
-3. **Bot registers the user** and records their status
-4. **Dashboard updates** showing all user statuses
-5. **When disaster alert fires**, ALL registered users receive the alert via broadcast
-
-## Alert Triggers
-
-| Event Type | Trigger Condition | Alert |
-|------------|------------------|-------|
-| Earthquake | Magnitude >= 5.0 | 🚨 Critical |
-| Earthquake | Magnitude >= 4.0 | ⚠️ High |
-| Weather | Tropical Cyclone Signal #3+ | 🚨 Critical |
-| Calamity | "State of Calamity" declared | 🚨 Critical |
-| Tsunami | Any tsunami warning | 🚨 Critical |
-| Volcanic | Any eruption warning | ⚠️ High |
-
-## Provincial Risk Profiles
-
-The system tracks 30+ high-risk Philippine provinces, with special focus on Mindanao regions:
-
-**Highest Risk (Seismic)**
-- Davao Oriental/Sur/Norte
-- Surigao del Norte/Sur
-- Compostela Valley
-
-**High Risk (Flooding)**
-- Pampanga, Bulacan, Nueva Ecija
-- Leyte, Samar
-
-**Monitored Hazards**
-- Earthquakes, Tsunamis
-- Volcanic eruptions
-- Tropical cyclones
-- Flooding, Landslides
-
-## Deployment
-
-### Local Development
-```bash
-python3 bot_handler.py <BOT_TOKEN> &  # Start Telegram bot
-streamlit run dashboard.py           # Start dashboard
-```
-
-### Production (Self-Hosted)
-```bash
-python3 bot_handler.py <BOT_TOKEN> &  # Background Telegram bot
-python3 monitor.py --interval 5 &     # Background monitor
-```
-
----
-Built for rapid awareness of regional disaster escalations in the Philippines.

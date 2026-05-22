@@ -1,9 +1,4 @@
-"""
-Render.com deployment configuration
-Create this file at render.yaml in your project root
-"""
-
-# render.yaml
+# render.yaml - For Render.com deployment
 services:
   - type: web
     name: phil-disaster-monitor
@@ -12,10 +7,15 @@ services:
     branch: main
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run dashboard.py --server.port $PORT
-    healthCheckPath: /
+    startCommand: python api_server.py
+    healthCheckPath: /health
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
+      - key: PORT
+        fromService:
+          type: web
+          name: phil-disaster-monitor
+          envVarKey: PORT

@@ -17,10 +17,20 @@ from scraper import (
     scrape_all_feeds, filter_by_severity, get_province_status,
     HIGH_RISK_PROVINCES, get_dashboard_data
 )
-from bot_handler import (
-    get_all_statuses, get_registered_users, save_users, load_users,
-    broadcast_message, send_broadcast_from_monitor
-)
+
+# Bot handler imports - will be loaded dynamically to allow API server mode
+def load_bot_handler():
+    """Lazy load bot_handler to allow running without it"""
+    try:
+        from bot_handler import (
+            get_all_statuses, get_registered_users, save_users, load_users,
+            broadcast_message, send_broadcast_from_monitor
+        )
+        return True
+    except ImportError:
+        return False
+
+BOT_HANDLER_AVAILABLE = load_bot_handler()
 
 # ==================== PAGE CONFIG ====================
 
@@ -155,15 +165,37 @@ def render_sidebar():
 def render_sos_status():
     """Render SOS/SAFE status panel from Telegram responses"""
 
-    # Import the bot handler
-    try:
-        from bot_handler import get_all_statuses, get_registered_users
-    except:
-        st.warning("⚠️ Bot handler not available. Run bot_handler.py to enable SOS tracking.")
-        return
+    # Check if bot handler is available
+    if not BOT_HANDLER_AVAILABLE:
+        st.warning("⚠️ Bot handler not available. SOS status updates won't work until bot_handler.py is run.")
+        st.info("💡 Tip: Deploy api_server.py on Render to enable 24/7 Telegram polling")
 
-    statuses = get_all_statuses()
-    users = get_registered_users()
+        # Still try to load from files directly
+        import os
+        import json
+        status_file = os.path.join(os.path.dirname(__file__), "status.json")
+        users_file = os.path.join(os.path.dirname(__file__), "users.json")
+
+        statuses = {}
+        users = {}
+
+        if os.path.exists(status_file):
+            try:
+                with open(status_file, 'r') as f:
+                    statuses = json.load(f)
+            except:
+                pass
+
+        if os.path.exists(users_file):
+            try:
+                with open(users_file, 'r') as f:
+                    users = json.load(f)
+            except:
+                pass
+    else:
+        from bot_handler import get_all_statuses, get_registered_users
+        statuses = get_all_statuses()
+        users = get_registered_users()
 
     st.markdown("## 🆘 People Status Monitor")
 
@@ -257,6 +289,20 @@ def render_user_management():
 
     # Telegram credentials
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN") or st.session_state.get("bot_token", "")
+
+    # Load users from file directly
+    import os
+    import json
+    users_file = os.path.join(os.path.dirname(__file__), "users.json")
+    users = {}
+
+    if os.path.exists(users_file):
+        try:
+            with open(users_file, 'r') as f:
+                users = json.load(f)
+        except:
+            pass
+
     if not bot_token:
         st.warning("⚠️ Set TELEGRAM_BOT_TOKEN environment variable to enable broadcasts")
         bot_token = st.text_input("Or enter bot token here:", type="password", key="bot_token_input")
