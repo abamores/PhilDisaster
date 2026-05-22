@@ -1,0 +1,11 @@
+{
+  "telegram_bot_token": " 8938903628:AAGCXL5AgWsymcZAGmOOoe0d2ZHCMPHpzbM",
+  "telegram_chat_id": "59838581",
+  "check_interval_minutes": 15,
+  "severity_threshold": "low",
+  "alert_on_calamity": true,
+  "alert_on_earthquake_magnitude": 5.0,
+  "alert_on_cyclone_signal": 3,
+  "mindanao_focus": true,
+  "high_risk_provinces_only": false
+}
