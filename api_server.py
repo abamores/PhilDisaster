@@ -378,7 +378,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
         function renderProvinces(statuses) {
             const container = document.getElementById('province-list');
             const provinceStatuses = {};
-            const keywords = Object.keys('''Davao Oriental Davao del Norte Davao del Sur Compostela Valley Surigao del Norte Surigao del Sur Agusan del Norte Bukidnon Lanao del Norte Zamboanga del Norte Zamboanga del Sur Misamis Oriental Leyte Samar Pampanga Bulacan Nueva Ecija Quezon Cebu Iloilo'''.split(' '));
+            const keywords = ["Davao Oriental", "Davao del Norte", "Davao del Sur", "Compostela Valley", "Surigao del Norte", "Surigao del Sur", "Agusan del Norte", "Bukidnon", "Lanao del Norte", "Zamboanga del Norte", "Zamboanga del Sur", "Misamis Oriental", "Leyte", "Samar", "Pampanga", "Bulacan", "Nueva Ecija", "Quezon", "Cebu", "Iloilo"];
 
             // Count events per region
             Object.values(statuses || {}).forEach(s => {
