@@ -395,6 +395,12 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             if (currentSource !== 'all') {
                 events = events.filter(e => e.source === currentSource);
             }
+            // Sort newest first by published date
+            events = events.slice().sort((a, b) => {
+                const da = a.published ? new Date(a.published) : new Date(0);
+                const db = b.published ? new Date(b.published) : new Date(0);
+                return db - da;
+            });
             if (!events.length) {
                 container.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><p>No events found</p></div>';
                 return;
@@ -412,9 +418,15 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
         function renderMindanao(events) {
             const container = document.getElementById('mindanao-list');
             const keywords = ['davao', 'surigao', 'bukidnon', 'lanao', 'maguindanao', 'cotabato', 'zamboanga', 'misamis', 'agusan', 'compostela', 'basilan', 'sulu'];
-            const mindanao = events.filter(e => {
+            let mindanao = events.filter(e => {
                 const text = ((e.title || '') + ' ' + (e.description || '')).toLowerCase();
                 return keywords.some(kw => text.includes(kw));
+            });
+            // Sort newest first
+            mindanao = mindanao.slice().sort((a, b) => {
+                const da = a.published ? new Date(a.published) : new Date(0);
+                const db = b.published ? new Date(b.published) : new Date(0);
+                return db - da;
             });
             if (!mindanao.length) {
                 container.innerHTML = '<div class="empty"><div class="empty-icon">✅</div><p>No active alerts for Mindanao region</p></div>';
