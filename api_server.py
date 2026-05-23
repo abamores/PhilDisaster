@@ -65,10 +65,18 @@ def send_telegram_message(chat_id, text):
     except:
         pass
 
+OFFSET_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".telegram_offset")
+
 def poll_telegram_commands():
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
         params = {"timeout": 1, "allowed_updates": ["message"]}
+
+        # Load last offset so we only get NEW updates
+        offset = load_json(OFFSET_FILE, None)
+        if offset:
+            params["offset"] = offset
+
         response = requests.get(url, params=params, timeout=5)
         data = response.json()
         if not data.get("ok"):
@@ -76,6 +84,7 @@ def poll_telegram_commands():
 
         updates = data.get("result", [])
         processed = 0
+        new_offset = offset
         statuses = load_json(STATUS_FILE, {})
         users = load_json(USERS_FILE, {})
 
@@ -84,20 +93,27 @@ def poll_telegram_commands():
             if not message:
                 continue
 
+            new_offset = update["update_id"] + 1
             chat_id = str(message["chat"]["id"])
             name = f"{message['chat'].get('first_name', '')} {message['chat'].get('last_name', '')}".strip() or "Unknown"
             username = message['chat'].get('username', '')
             text = message.get("text", "")
 
+            # Extract location if present
+            location = None
+            msg_location = message.get("location")
+            if msg_location:
+                location = {"lat": msg_location.get("latitude"), "lon": msg_location.get("longitude")}
+
             users[chat_id] = {"chat_id": chat_id, "name": name, "username": username, "status": "UNKNOWN", "last_seen": datetime.now().isoformat()}
 
             if text.startswith('/sos'):
-                statuses[chat_id] = {"name": name, "username": username, "status": "SOS", "timestamp": datetime.now().isoformat(), "chat_id": chat_id}
+                statuses[chat_id] = {"name": name, "username": username, "status": "SOS", "timestamp": datetime.now().isoformat(), "chat_id": chat_id, "location": location}
                 users[chat_id]["status"] = "SOS"
                 processed += 1
                 send_telegram_message(chat_id, "🆘 SOS registered! Help is on the way. Stay safe.")
             elif text.startswith('/safe'):
-                statuses[chat_id] = {"name": name, "username": username, "status": "SAFE", "timestamp": datetime.now().isoformat(), "chat_id": chat_id}
+                statuses[chat_id] = {"name": name, "username": username, "status": "SAFE", "timestamp": datetime.now().isoformat(), "chat_id": chat_id, "location": location}
                 users[chat_id]["status"] = "SAFE"
                 processed += 1
                 send_telegram_message(chat_id, "✅ You're marked as SAFE. Glad you're okay!")
@@ -105,6 +121,11 @@ def poll_telegram_commands():
         if processed > 0:
             save_json(STATUS_FILE, statuses)
             save_json(USERS_FILE, users)
+
+        # Save offset AFTER processing so Telegram knows we've read these updates
+        if new_offset:
+            save_json(OFFSET_FILE, new_offset)
+
         return processed
     except:
         return 0
