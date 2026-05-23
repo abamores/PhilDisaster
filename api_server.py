@@ -195,6 +195,17 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
         .region-title { font-weight: bold; font-size: 0.9rem; color: #1E3A5F; margin-bottom: 0.5rem; padding-bottom: 0.25rem; border-bottom: 1px solid #e2e8f0; }
         .empty { text-align: center; padding: 2rem; color: #666; }
         .empty-icon { font-size: 3rem; margin-bottom: 1rem; }
+        .user-card { display: flex; align-items: center; gap: 1rem; padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem; background: #f8f9fa; border-left: 4px solid #ccc; }
+        .user-card.safe { border-left-color: #4CAF50; background: #E8F5E9; }
+        .user-card.sos { border-left-color: #FF4444; background: #FFE5E5; }
+        .user-card .avatar { font-size: 1.5rem; }
+        .user-card .info { flex: 1; }
+        .user-card .info h4 { margin: 0 0 0.25rem 0; font-size: 0.95rem; }
+        .user-card .info small { opacity: 0.7; }
+        .user-card .status-badge { padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }
+        .status-badge.safe { background: #4CAF50; color: white; }
+        .status-badge.sos { background: #FF4444; color: white; }
+        .status-badge.unknown { background: #999; color: white; }
         @media (max-width: 900px) {
             .sidebar { width: 100%; position: relative; height: auto; }
             .main { margin-left: 0; }
@@ -257,7 +268,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 
         <div class="telegram-box">
             <h4>📱 Telegram Integration Active</h4>
-            <p>Message <strong>@PhilippineDisasterMonitoring_bot</strong> on Telegram:</p>
+            <p>Message <strong><a href="https://t.me/PhilippineDisasterMonitoring_bot" target="_blank">t.me/PhilippineDisasterMonitoring_bot</a></strong> on Telegram:</p>
             <p><code>/sos</code> Request emergency help | <code>/safe</code> Confirm you're safe | <code>/status</code> Check your status</p>
         </div>
 
@@ -265,6 +276,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             <button class="tab active" onclick="showTab('events')">📊 All Events</button>
             <button class="tab" onclick="showTab('mindanao')">🏝️ Mindanao Focus</button>
             <button class="tab" onclick="showTab('sos')">🆘 People Status</button>
+            <button class="tab" onclick="showTab('users')">👥 Users</button>
         </div>
 
         <div id="events-tab" class="content">
@@ -294,6 +306,48 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                 </div>
             </div>
         </div>
+
+        <div id="users-tab" class="content" style="display:none;">
+            <h3>👥 User Registration & Management</h3>
+
+            <div style="background:#E8F5E9;border-left:4px solid #4CAF50;padding:1rem;border-radius:0 8px 8px 0;margin-bottom:1.5rem;">
+                <h4 style="color:#2E7D32;margin-bottom:0.5rem;">📝 Register New User</h4>
+                <p style="font-size:0.9rem;margin-bottom:1rem;">Fill in the details below. After registration, the user <strong>must message <a href="https://t.me/PhilippineDisasterMonitoring_bot" target="_blank">t.me/PhilippineDisasterMonitoring_bot</a></strong> and send <code>/safe</code> or <code>/sos</code> to activate alerts.</p>
+                <form id="register-form" onsubmit="submitRegistration(event)">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem;">
+                        <input type="text" id="reg-firstname" placeholder="First Name *" required style="padding:0.6rem;border:1px solid #ccc;border-radius:6px;font-size:0.9rem;">
+                        <input type="text" id="reg-lastname" placeholder="Last Name *" required style="padding:0.6rem;border:1px solid #ccc;border-radius:6px;font-size:0.9rem;">
+                        <select id="reg-region" style="padding:0.6rem;border:1px solid #ccc;border-radius:6px;font-size:0.9rem;">
+                            <option value="">Region *</option>
+                            <option>National Capital Region (NCR)</option>
+                            <option>Central Luzon</option>
+                            <option>CALABARZON</option>
+                            <option>Western Visayas</option>
+                            <option>Central Visayas</option>
+                            <option>Eastern Visayas</option>
+                            <option>Northern Mindanao</option>
+                            <option>Davao Region</option>
+                            <option>Caraga</option>
+                            <option>Zamboanga Peninsula</option>
+                            <option>Soccsksargen</option>
+                            <option>Bicol Region</option>
+                            <option>Ilocos Region</option>
+                            <option>Cagayan Valley</option>
+                            <option>MMRA</option>
+                        </select>
+                        <input type="text" id="reg-section" placeholder="Section / Unit" style="padding:0.6rem;border:1px solid #ccc;border-radius:6px;font-size:0.9rem;">
+                        <input type="text" id="reg-isname" placeholder="IS Name / Role" style="padding:0.6rem;border:1px solid #ccc;border-radius:6px;font-size:0.9rem;">
+                        <input type="text" id="reg-chatid" placeholder="Telegram Chat ID *" required style="padding:0.6rem;border:1px solid #ccc;border-radius:6px;font-size:0.9rem;">
+                        <input type="text" id="reg-username" placeholder="Telegram Username (optional)" style="padding:0.6rem;border:1px solid #ccc;border-radius:6px;font-size:0.9rem;">
+                    </div>
+                    <button type="submit" style="padding:0.75rem 2rem;background:#2E7D32;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.95rem;">Register User</button>
+                </form>
+                <div id="reg-result" style="margin-top:0.75rem;"></div>
+            </div>
+
+            <h4 style="margin-bottom:0.75rem;">📋 Registered Users (<span id="user-count">0</span>)</h4>
+            <div id="users-list">Loading...</div>
+        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -321,6 +375,8 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             document.getElementById('events-tab').style.display = tab === 'events' ? 'block' : 'none';
             document.getElementById('mindanao-tab').style.display = tab === 'mindanao' ? 'block' : 'none';
             document.getElementById('sos-tab').style.display = tab === 'sos' ? 'block' : 'none';
+            document.getElementById('users-tab').style.display = tab === 'users' ? 'block' : 'none';
+            if (tab === 'users') renderUsers(data?.users || {});
         }
 
         function filterSource(source) {
@@ -459,6 +515,59 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             }
         }
 
+        function renderUsers(users) {
+            const container = document.getElementById('users-list');
+            const countEl = document.getElementById('user-count');
+            if (!users || !Object.keys(users).length) {
+                countEl.textContent = '0';
+                container.innerHTML = '<div class="empty"><div class="empty-icon">👥</div><p>No users registered yet.</p></div>';
+                return;
+            }
+            countEl.textContent = Object.keys(users).length;
+            container.innerHTML = Object.values(users).map(u => {
+                const status = u.status || 'UNKNOWN';
+                const badgeClass = status.toLowerCase();
+                const avatar = status === 'SOS' ? '🔴' : status === 'SAFE' ? '🟢' : '⚪';
+                return `<div class="user-card ${badgeClass}">
+                    <div class="avatar">${avatar}</div>
+                    <div class="info">
+                        <h4>${u.name || 'Unknown'}</h4>
+                        <small>@${u.username || 'N/A'} | ${u.region || ''} ${u.section ? '| ' + u.section : ''} ${u.is_name ? '| ' + u.is_name : ''}</small>
+                    </div>
+                    <span class="status-badge ${badgeClass}">${status}</span>
+                </div>`;
+            }).join('');
+        }
+
+        function submitRegistration(e) {
+            e.preventDefault();
+            const payload = {
+                first_name: document.getElementById('reg-firstname').value,
+                last_name: document.getElementById('reg-lastname').value,
+                region: document.getElementById('reg-region').value,
+                section: document.getElementById('reg-section').value,
+                is_name: document.getElementById('reg-isname').value,
+                chat_id: document.getElementById('reg-chatid').value,
+                username: document.getElementById('reg-username').value
+            };
+            fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json()).then(res => {
+                const el = document.getElementById('reg-result');
+                if (res.success) {
+                    el.innerHTML = '<span style="color:#2E7D32;">✅ ' + res.message + '</span>';
+                    document.getElementById('register-form').reset();
+                    loadData().then(d => { data = d; renderUsers(data?.users || {}); });
+                } else {
+                    el.innerHTML = '<span style="color:#FF4444;">❌ ' + res.message + '</span>';
+                }
+            }).catch(() => {
+                document.getElementById('reg-result').innerHTML = '<span style="color:#FF4444;">❌ Error submitting form</span>';
+            });
+        }
+
         function renderProvinces(statuses) {
             const container = document.getElementById('province-list');
             const provinceStatuses = {};
@@ -555,6 +664,34 @@ def api_data():
         "statuses": statuses,
         "users": users
     })
+
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    try:
+        data = request.get_json()
+        required = ['first_name', 'last_name', 'chat_id']
+        for f in required:
+            if not data.get(f):
+                return jsonify({"success": False, "message": f"{f} is required"})
+        users = load_json(USERS_FILE, {})
+        chat_id = str(data['chat_id'])
+        users[chat_id] = {
+            "chat_id": chat_id,
+            "name": f"{data['first_name']} {data['last_name']}".strip(),
+            "first_name": data['first_name'],
+            "last_name": data['last_name'],
+            "region": data.get('region', ''),
+            "section": data.get('section', ''),
+            "is_name": data.get('is_name', ''),
+            "username": data.get('username', ''),
+            "status": "UNKNOWN",
+            "registered_at": datetime.now().isoformat(),
+            "last_seen": datetime.now().isoformat()
+        }
+        save_json(USERS_FILE, users)
+        return jsonify({"success": True, "message": f"User {data['first_name']} registered!"})
+    except:
+        return jsonify({"success": False, "message": "Registration failed"})
 
 @app.route('/health')
 def health():
