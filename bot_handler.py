@@ -82,7 +82,7 @@ def get_all_statuses() -> dict:
 
 # ==================== COMMAND HANDLING ====================
 
-def handle_command(bot_token: str, chat_id: str, command: str, name: str = "Unknown", username: str = "") -> str:
+def handle_command(bot_token: str, chat_id: str, command: str, name: str = "Unknown", username: str = "", location: dict = None) -> str:
     """Handle /sos, /safe, /status, /broadcast commands"""
     users = load_users()
     statuses = load_statuses()
@@ -97,7 +97,8 @@ def handle_command(bot_token: str, chat_id: str, command: str, name: str = "Unkn
             "username": username,
             "status": "SOS",
             "timestamp": datetime.now().isoformat(),
-            "chat_id": chat_id
+            "chat_id": chat_id,
+            "location": location
         }
         save_statuses(statuses)
 
@@ -114,7 +115,8 @@ def handle_command(bot_token: str, chat_id: str, command: str, name: str = "Unkn
             "username": username,
             "status": "SAFE",
             "timestamp": datetime.now().isoformat(),
-            "chat_id": chat_id
+            "chat_id": chat_id,
+            "location": location
         }
         save_statuses(statuses)
 
@@ -247,21 +249,30 @@ def poll_updates(bot_token: str):
                 name = f"{message['chat'].get('first_name', '')} {message['chat'].get('last_name', '')}".strip() or "Unknown"
                 username = message['chat'].get('username', '')
 
+                # Extract location if present
+                location = None
+                msg_location = message.get("location")
+                if msg_location:
+                    location = {
+                        "lat": msg_location.get("latitude"),
+                        "lon": msg_location.get("longitude")
+                    }
+
                 text = message.get("text", "")
 
                 # Process commands
                 if text.startswith('/sos'):
-                    reply = handle_command(bot_token, chat_id, '/sos', name, username)
+                    reply = handle_command(bot_token, chat_id, '/sos', name, username, location)
                 elif text.startswith('/safe'):
-                    reply = handle_command(bot_token, chat_id, '/safe', name, username)
+                    reply = handle_command(bot_token, chat_id, '/safe', name, username, location)
                 elif text.startswith('/status'):
-                    reply = handle_command(bot_token, chat_id, '/status', name, username)
+                    reply = handle_command(bot_token, chat_id, '/status', name, username, location)
                 elif text.startswith('/list') or text.startswith('/reports'):
-                    reply = handle_command(bot_token, chat_id, '/list', name, username)
+                    reply = handle_command(bot_token, chat_id, '/list', name, username, location)
                 elif text.startswith('/users') or text.startswith('/members'):
-                    reply = handle_command(bot_token, chat_id, '/users', name, username)
+                    reply = handle_command(bot_token, chat_id, '/users', name, username, location)
                 elif text.startswith('/subscribe') or text.startswith('/register'):
-                    reply = handle_command(bot_token, chat_id, '/subscribe', name, username)
+                    reply = handle_command(bot_token, chat_id, '/subscribe', name, username, location)
                 else:
                     reply = f"👋 Hello {name}! I'm the Disaster Monitor Bot.\n\nCommands:\n/sos - Request emergency help\n/safe - Confirm you're safe\n/status - Check your status\n/subscribe - Register"
 

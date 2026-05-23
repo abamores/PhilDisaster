@@ -179,7 +179,9 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             .main { margin-left: 0; }
             body { flex-direction: column; }
         }
+        #people-map { border: 2px solid #e2e8f0; }
     </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
     <div class="sidebar">
@@ -263,14 +265,24 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
 
         <div id="sos-tab" class="content" style="display:none;">
             <h3>🆘 People Status Reports</h3>
-            <div id="people-list">Loading...</div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                <div id="people-list">Loading...</div>
+                <div>
+                    <h4 style="margin-bottom:0.5rem;">📍 Location Map</h4>
+                    <div id="people-map" style="height:350px; border-radius:8px; overflow:hidden; background:#e0e0e0;"></div>
+                </div>
+            </div>
         </div>
     </div>
 
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         let allEvents = [];
         let currentSource = 'all';
         let currentTab = 'events';
+        let peopleMap = null;
+        let sosMarkers = [];
+        let safeMarkers = [];
 
         async function fetchData() {
             try {
@@ -342,6 +354,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
             const container = document.getElementById('people-list');
             if (!statuses || !Object.keys(statuses).length) {
                 container.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><p>No status reports yet. Send /sos or /safe via Telegram.</p></div>';
+                renderPeopleMap({});
                 return;
             }
             const sos = Object.values(statuses).filter(s => s.status === 'SOS');
@@ -356,6 +369,7 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                         <div class="person-info">
                             <h4>${s.name || 'Unknown'}</h4>
                             <small>@${s.username || 'N/A'} | ${s.status} | ${s.timestamp ? s.timestamp.substring(0, 16) : ''}</small>
+                            ${s.location ? `<small style="display:block;margin-top:0.25rem;">📍 ${s.location.lat}, ${s.location.lon}</small>` : ''}
                         </div>
                     </div>
                 `).join('');
@@ -368,11 +382,60 @@ DASHBOARD_HTML = '''<!DOCTYPE html>
                         <div class="person-info">
                             <h4>${s.name || 'Unknown'}</h4>
                             <small>@${s.username || 'N/A'} | ${s.status} | ${s.timestamp ? s.timestamp.substring(0, 16) : ''}</small>
+                            ${s.location ? `<small style="display:block;margin-top:0.25rem;">📍 ${s.location.lat}, ${s.location.lon}</small>` : ''}
                         </div>
                     </div>
                 `).join('');
             }
             container.innerHTML = html;
+            renderPeopleMap(statuses);
+        }
+
+        function renderPeopleMap(statuses) {
+            const mapDiv = document.getElementById('people-map');
+            if (!mapDiv) return;
+
+            // Clear existing markers
+            sosMarkers.forEach(m => m.remove());
+            safeMarkers.forEach(m => m.remove());
+            sosMarkers = [];
+            safeMarkers = [];
+
+            if (!peopleMap) {
+                peopleMap = L.map('people-map').setView([12.8797, 121.7740], 6);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap'
+                }).addTo(peopleMap);
+            }
+
+            const withLocation = Object.values(statuses).filter(s => s.location && s.location.lat && s.location.lon);
+
+            if (withLocation.length === 0) {
+                mapDiv.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#666;">No location data yet</div>';
+                return;
+            }
+
+            mapDiv.innerHTML = '';
+
+            withLocation.forEach(s => {
+                const color = s.status === 'SOS' ? '#FF4444' : '#4CAF50';
+                const emoji = s.status === 'SOS' ? '🔴' : '🟢';
+                const marker = L.circleMarker([s.location.lat, s.location.lon], {
+                    radius: 10,
+                    fillColor: color,
+                    color: '#fff',
+                    weight: 2,
+                    fillOpacity: 0.8
+                }).addTo(peopleMap);
+                marker.bindPopup(`<b>${emoji} ${s.name || 'Unknown'}</b><br>@${s.username || 'N/A'}<br>${s.status} - ${s.timestamp ? s.timestamp.substring(0, 16) : ''}`);
+                if (s.status === 'SOS') sosMarkers.push(marker);
+                else safeMarkers.push(marker);
+            });
+
+            if (withLocation.length > 0) {
+                const bounds = L.latLngBounds(withLocation.map(s => [s.location.lat, s.location.lon]));
+                peopleMap.fitBounds(bounds, { padding: [30, 30] });
+            }
         }
 
         function renderProvinces(statuses) {
