@@ -117,6 +117,9 @@ def poll_telegram_commands():
                 users[chat_id]["status"] = "SAFE"
                 processed += 1
                 send_telegram_message(chat_id, "✅ You're marked as SAFE. Glad you're okay!\n\n🌐 Dashboard: https://phil-disaster-monitor.onrender.com/dashboard")
+            elif text.startswith('/status'):
+                current = statuses.get(chat_id, {}).get('status', 'UNKNOWN')
+                send_telegram_message(chat_id, f"📍 Your current status: {current}")
 
         if processed > 0:
             save_json(STATUS_FILE, statuses)
