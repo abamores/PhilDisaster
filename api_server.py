@@ -111,12 +111,12 @@ def poll_telegram_commands():
                 statuses[chat_id] = {"name": name, "username": username, "status": "SOS", "timestamp": datetime.now().isoformat(), "chat_id": chat_id, "location": location}
                 users[chat_id]["status"] = "SOS"
                 processed += 1
-                send_telegram_message(chat_id, "🆘 SOS registered! Help is on the way. Stay safe.")
+                send_telegram_message(chat_id, "🆘 SOS registered! Help is on the way.\n\n🌐 Dashboard: https://phil-disaster-monitor.onrender.com/dashboard")
             elif text.startswith('/safe'):
                 statuses[chat_id] = {"name": name, "username": username, "status": "SAFE", "timestamp": datetime.now().isoformat(), "chat_id": chat_id, "location": location}
                 users[chat_id]["status"] = "SAFE"
                 processed += 1
-                send_telegram_message(chat_id, "✅ You're marked as SAFE. Glad you're okay!")
+                send_telegram_message(chat_id, "✅ You're marked as SAFE. Glad you're okay!\n\n🌐 Dashboard: https://phil-disaster-monitor.onrender.com/dashboard")
 
         if processed > 0:
             save_json(STATUS_FILE, statuses)

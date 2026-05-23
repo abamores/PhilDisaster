@@ -162,7 +162,7 @@ def handle_command(bot_token: str, chat_id: str, command: str, name: str = "Unkn
         return msg
 
     elif command.lower() in ['/subscribe', '/register']:
-        return f"✅ You're registered! Name: {name}\nYour status: {statuses.get(user_id, {}).get('status', 'UNKNOWN')}\n\nCommands:\n/sos - Request help\n/safe - I'm safe\n/status - Check status"
+        return f"✅ You're registered! Name: {name}\nYour status: {statuses.get(user_id, {}).get('status', 'UNKNOWN')}\n\n🌐 Dashboard: https://phil-disaster-monitor.onrender.com/dashboard\n\nCommands:\n/sos - Request help\n/safe - I'm safe\n/status - Check status"
 
     return "Commands:\n/sos - Request emergency help\n/safe - Confirm you're safe\n/status - Check your current status\n/subscribe - Register"
 
@@ -274,7 +274,7 @@ def poll_updates(bot_token: str):
                 elif text.startswith('/subscribe') or text.startswith('/register'):
                     reply = handle_command(bot_token, chat_id, '/subscribe', name, username, location)
                 else:
-                    reply = f"👋 Hello {name}! I'm the Disaster Monitor Bot.\n\nCommands:\n/sos - Request emergency help\n/safe - Confirm you're safe\n/status - Check your status\n/subscribe - Register"
+                    reply = f"👋 Hello {name}! I'm the Disaster Monitor Bot.\n\nCommands:\n/sos - Request emergency help\n/safe - Confirm you're safe\n/status - Check your status\n/subscribe - Register\n\n🌐 View live dashboard:\nhttps://phil-disaster-monitor.onrender.com/dashboard"
 
                 # Send reply
                 send_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
