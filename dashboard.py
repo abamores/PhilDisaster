@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from scraper import (
     scrape_all_feeds, filter_by_severity, get_province_status,
-    HIGH_RISK_PROVINCES, get_dashboard_data
+    HIGH_RISK_PROVINCES, get_dashboard_data, sort_events_by_published
 )
 
 # Bot handler imports - will be loaded dynamically to allow API server mode
@@ -434,6 +434,7 @@ def render_header():
 
 def render_source_tabs(events, min_severity="low"):
     """Render events organized by source with tabs"""
+    events = sort_events_by_published(events)
 
     sources = {
         "All": events,
@@ -448,6 +449,7 @@ def render_source_tabs(events, min_severity="low"):
     for tab, (source_name, source_events) in zip(tabs, sources.items()):
         with tab:
             filtered = filter_by_severity(source_events, min_severity)
+            filtered = sort_events_by_published(filtered)
 
             if not filtered:
                 st.info(f"No events from {source_name} matching filter criteria")
@@ -512,6 +514,7 @@ def render_mindanao_focus(events):
         if any(kw in (e.get('title', '') + ' ' + e.get('description', '')).lower()
                for kw in mindanao_keywords)
     ]
+    mindanao_events = sort_events_by_published(mindanao_events)
 
     if not mindanao_events:
         st.success("✅ No active alerts for Mindanao region")

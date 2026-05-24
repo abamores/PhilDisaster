@@ -9,7 +9,7 @@ Features:
 
 import feedparser
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import re
 import json
@@ -131,6 +131,14 @@ HIGH_RISK_PROVINCES = {
 MAJOR_EARTHQUAKE_MAG = 5.0
 MAJOR_WEATHER_CODE = ["TCWS-3", "TCWS-4", "TCWS-5", "STORM-3", "STORM-4", "STORM-5"]  # typhoon signal
 
+DATE_FORMATS = [
+    "%a, %d %b %Y %H:%M:%S %z",
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%Y-%m-%d %H:%M:%S",
+    "%d %b %Y %H:%M:%S",
+    "%Y-%m-%d"
+]
+
 
 # ==================== SCRAPER FUNCTIONS ====================
 
@@ -213,21 +221,45 @@ def parse_date(date_str: str) -> datetime:
     if not date_str:
         return datetime.now()
 
-    formats = [
-        "%a, %d %b %Y %H:%M:%S %z",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%d %H:%M:%S",
-        "%d %b %Y %H:%M:%S",
-        "%Y-%m-%d"
-    ]
-
-    for fmt in formats:
+    for fmt in DATE_FORMATS:
         try:
             return datetime.strptime(date_str, fmt)
         except:
             continue
 
     return datetime.now()
+
+
+def get_published_datetime(value) -> Optional[datetime]:
+    """Return a parsed published datetime, or None when the event has no usable date."""
+    if isinstance(value, datetime):
+        return value
+
+    if isinstance(value, str) and value:
+        for fmt in DATE_FORMATS:
+            try:
+                return datetime.strptime(value, fmt)
+            except:
+                continue
+
+    return None
+
+
+def event_published_timestamp(event: dict) -> float:
+    """Normalize event dates for newest-first sorting."""
+    published = get_published_datetime(event.get("published"))
+    if not published:
+        return float("-inf")
+
+    if published.tzinfo is None:
+        published = published.replace(tzinfo=timezone.utc)
+
+    return published.timestamp()
+
+
+def sort_events_by_published(events: list) -> list:
+    """Sort events by published date, newest first, with undated events last."""
+    return sorted(events, key=event_published_timestamp, reverse=True)
 
 
 def determine_severity(event: dict, feed_type: str) -> str:
@@ -279,10 +311,7 @@ def scrape_all_feeds() -> list:
             )
             all_events.extend(events)
 
-    # Sort by date (newest first)
-    all_events.sort(key=lambda x: x.get("published", datetime.now()), reverse=True)
-
-    return all_events
+    return sort_events_by_published(all_events)
 
 
 def filter_by_severity(events: list, min_severity: str = "low") -> list:
