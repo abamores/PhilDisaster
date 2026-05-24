@@ -134,10 +134,37 @@ MAJOR_WEATHER_CODE = ["TCWS-3", "TCWS-4", "TCWS-5", "STORM-3", "STORM-4", "STORM
 DATE_FORMATS = [
     "%a, %d %b %Y %H:%M:%S %z",
     "%Y-%m-%dT%H:%M:%SZ",
+    "%Y-%m-%dT%H:%M:%S%z",
     "%Y-%m-%d %H:%M:%S",
     "%d %b %Y %H:%M:%S",
-    "%Y-%m-%d"
+    "%Y-%m-%d",
+    "%d %B %Y",
+    "%d %b %Y"
 ]
+
+MONTH_NUMBERS = {
+    "jan": 1, "january": 1,
+    "feb": 2, "february": 2,
+    "mar": 3, "march": 3,
+    "apr": 4, "april": 4,
+    "may": 5,
+    "jun": 6, "june": 6,
+    "jul": 7, "july": 7,
+    "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10,
+    "nov": 11, "november": 11,
+    "dec": 12, "december": 12,
+}
+
+EVENT_TEXT_DATE_RE = re.compile(
+    r"\b(?:(\d{1,2}):(\d{2})\s*([AP]\.?M\.?)\s*(?:today,\s*)?)?"
+    r"(\d{1,2})\s+"
+    r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t)?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    r"\s+(\d{4})\b",
+    re.IGNORECASE
+)
 
 
 # ==================== SCRAPER FUNCTIONS ====================
@@ -193,6 +220,12 @@ def parse_rss_feed(url: str, feed_type: str = "general", source: str = "UNKNOWN"
 
             # Determine severity based on type and content
             event["severity"] = determine_severity(event, feed_type)
+            event_text_date = get_event_text_datetime(event)
+            event_sort_date = event_text_date or get_published_datetime(event.get("published"))
+            if event_sort_date:
+                event["sort_date"] = normalize_datetime(event_sort_date).isoformat()
+                if event_text_date:
+                    event["published"] = normalize_datetime(event_text_date)
 
             events.append(event)
 
@@ -245,20 +278,52 @@ def get_published_datetime(value) -> Optional[datetime]:
     return None
 
 
+def normalize_datetime(value: datetime) -> datetime:
+    """Use UTC for consistent date comparisons and JSON sort values."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def get_event_text_datetime(event: dict) -> Optional[datetime]:
+    """Extract event dates written in titles/descriptions, such as PAGASA advisory dates."""
+    text = f"{event.get('title', '')} {event.get('description', '')}"
+    for match in EVENT_TEXT_DATE_RE.finditer(text):
+        hour_text, minute_text, meridiem, day_text, month_text, year_text = match.groups()
+        hour = int(hour_text) if hour_text else 0
+        minute = int(minute_text) if minute_text else 0
+
+        if meridiem:
+            meridiem = meridiem.replace(".", "").upper()
+            if meridiem == "PM" and hour != 12:
+                hour += 12
+            elif meridiem == "AM" and hour == 12:
+                hour = 0
+
+        month = MONTH_NUMBERS[month_text.lower().rstrip(".")]
+        return datetime(int(year_text), month, int(day_text), hour, minute)
+
+    return None
+
+
+def get_event_sort_datetime(event: dict) -> Optional[datetime]:
+    """Prefer the event date mentioned in text, then fall back to feed publish date."""
+    return get_event_text_datetime(event) or get_published_datetime(
+        event.get("sort_date") or event.get("published")
+    )
+
+
 def event_published_timestamp(event: dict) -> float:
     """Normalize event dates for newest-first sorting."""
-    published = get_published_datetime(event.get("published"))
+    published = get_event_sort_datetime(event)
     if not published:
         return float("-inf")
 
-    if published.tzinfo is None:
-        published = published.replace(tzinfo=timezone.utc)
-
-    return published.timestamp()
+    return normalize_datetime(published).timestamp()
 
 
 def sort_events_by_published(events: list) -> list:
-    """Sort events by published date, newest first, with undated events last."""
+    """Sort events by event/published date, newest first, with undated events last."""
     return sorted(events, key=event_published_timestamp, reverse=True)
 
 
